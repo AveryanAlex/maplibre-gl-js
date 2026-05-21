@@ -331,13 +331,29 @@ describe('Terrain', () => {
 
         // tile (0,0,1) with x beyond EXTENT should normalize to tile (1,0,1)
         const tileID = new OverscaledTileID(1, 0, 1, 0, 0);
+        const normalizeSpy = vi.spyOn(tileID, 'normalizeCoordinates');
         terrain.getDEMElevation(tileID, EXTENT + 100, 50);
 
+        expect(normalizeSpy).toHaveBeenCalledOnce();
         expect(spy).toHaveBeenCalledOnce();
         const [calledTileID] = spy.mock.calls[0];
         expect(calledTileID.canonical.x).toBe(1);
         expect(calledTileID.canonical.y).toBe(0);
         expect(calledTileID.canonical.z).toBe(1);
+    });
+
+    test('getDEMElevation samples current tile directly for in-bounds coordinates', () => {
+        const terrain = new Terrain(null, {_source: {tileSize: 512}} as any, {} as any);
+        const spy = vi.fn().mockReturnValue({tile: null});
+        terrain.getTerrainData = spy;
+
+        const tileID = new OverscaledTileID(1, 0, 1, 0, 0);
+        const normalizeSpy = vi.spyOn(tileID, 'normalizeCoordinates');
+        terrain.getDEMElevation(tileID, 100, 50);
+
+        expect(normalizeSpy).not.toHaveBeenCalled();
+        expect(spy).toHaveBeenCalledOnce();
+        expect(spy).toHaveBeenCalledWith(tileID);
     });
 
     test('getDEMElevation returns 0 for coordinates beyond tile grid', () => {

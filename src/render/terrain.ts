@@ -197,14 +197,25 @@ export class Terrain {
      * @returns the elevation
      */
     getDEMElevation(tileID: OverscaledTileID, x: number, y: number, extent: number = EXTENT): number {
-        const normalized = tileID.normalizeCoordinates(x, y, extent);
-        if (!normalized) return 0;
+        let terrain: TerrainData;
+        let demX = x;
+        let demY = y;
 
-        const terrain = this.getTerrainData(normalized.tileID);
+        if (x >= 0 && x < extent && y >= 0 && y < extent) {
+            terrain = this.getTerrainData(tileID);
+        } else {
+            const normalized = tileID.normalizeCoordinates(x, y, extent);
+            if (!normalized) return 0;
+
+            terrain = this.getTerrainData(normalized.tileID);
+            demX = normalized.x;
+            demY = normalized.y;
+        }
+
         const dem = terrain.tile?.dem;
         if (!dem) return 0;
 
-        const pos = vec2.transformMat4([], [normalized.x / extent * EXTENT, normalized.y / extent * EXTENT], terrain.u_terrain_matrix);
+        const pos = vec2.transformMat4([], [demX / extent * EXTENT, demY / extent * EXTENT], terrain.u_terrain_matrix);
         const coord = [pos[0] * dem.dim, pos[1] * dem.dim];
 
         // bilinear interpolation
