@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, test} from 'vitest';
+import {beforeEach, describe, expect, test, vi} from 'vitest';
 import {Placement, RetainedQueryData} from './placement.ts';
 import {MercatorTransform} from '../geo/projection/mercator_transform.ts';
 import {SymbolStyleLayer} from '../style/style_layer/symbol_style_layer.ts';
@@ -56,5 +56,22 @@ describe('placement', () => {
                 } as any
             }, {}, false);
         }).not.toThrow();
+    });
+
+    test('terrain elevation function uses a per-tile sampler', () => {
+        const sampler = {getElevation: vi.fn().mockReturnValue(42)};
+        const terrain = {
+            getElevation: vi.fn(),
+            getElevationSampler: vi.fn().mockReturnValue(sampler)
+        };
+        placement = new Placement(transform, terrain as any, 0, true);
+        const tileID = new OverscaledTileID(1, 0, 1, 0, 0);
+
+        const getElevation = (placement as any)._getTerrainElevationFunc(tileID);
+
+        expect(getElevation(1, 2)).toBe(42);
+        expect(terrain.getElevationSampler).toHaveBeenCalledWith(tileID);
+        expect(sampler.getElevation).toHaveBeenCalledWith(1, 2);
+        expect(terrain.getElevation).not.toHaveBeenCalled();
     });
 });

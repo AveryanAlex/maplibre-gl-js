@@ -38,6 +38,54 @@ export type TerrainData = {
     tile: Tile;
 };
 
+function sampleDEMElevation(terrain: TerrainData, x: number, y: number, extent: number): number {
+    const dem = terrain.tile?.dem;
+    if (!dem) return 0;
+
+    const pos = vec2.transformMat4([], [x / extent * EXTENT, y / extent * EXTENT], terrain.u_terrain_matrix);
+    const coord = [pos[0] * dem.dim, pos[1] * dem.dim];
+
+    // bilinear interpolation
+    const cx = Math.floor(coord[0]),
+        cy = Math.floor(coord[1]),
+        tx = coord[0] - cx,
+        ty = coord[1] - cy;
+    return (
+        dem.get(cx, cy) * (1 - tx) * (1 - ty) +
+        dem.get(cx + 1, cy) * (tx) * (1 - ty) +
+        dem.get(cx, cy + 1) * (1 - tx) * (ty) +
+        dem.get(cx + 1, cy + 1) * (tx) * (ty)
+    );
+}
+
+/**
+ * @internal
+ * Samples terrain elevation repeatedly for a single tile without redoing the
+ * tile/source-tile lookup for every in-bounds coordinate.
+ */
+export class TerrainElevationSampler {
+    terrain: Terrain;
+    tileID: OverscaledTileID;
+    extent: number;
+    terrainData: TerrainData | null;
+
+    constructor(terrain: Terrain, tileID: OverscaledTileID, extent: number = EXTENT) {
+        this.terrain = terrain;
+        this.tileID = tileID;
+        this.extent = extent;
+        this.terrainData = null;
+    }
+
+    getElevation(x: number, y: number): number {
+        if (x < 0 || x >= this.extent || y < 0 || y >= this.extent) {
+            return this.terrain.getElevation(this.tileID, x, y, this.extent);
+        }
+
+        const terrainData = this.terrainData ||= this.terrain.getTerrainData(this.tileID);
+        return sampleDEMElevation(terrainData, x, y, this.extent) * this.terrain.exaggeration;
+    }
+}
+
 /**
  * @internal
  * This is the main class which handles most of the 3D Terrain logic. It has the following topics:
@@ -212,23 +260,7 @@ export class Terrain {
             demY = normalized.y;
         }
 
-        const dem = terrain.tile?.dem;
-        if (!dem) return 0;
-
-        const pos = vec2.transformMat4([], [demX / extent * EXTENT, demY / extent * EXTENT], terrain.u_terrain_matrix);
-        const coord = [pos[0] * dem.dim, pos[1] * dem.dim];
-
-        // bilinear interpolation
-        const cx = Math.floor(coord[0]),
-            cy = Math.floor(coord[1]),
-            tx = coord[0] - cx,
-            ty = coord[1] - cy;
-        return (
-            dem.get(cx, cy) * (1 - tx) * (1 - ty) +
-            dem.get(cx + 1, cy) * (tx) * (1 - ty) +
-            dem.get(cx, cy + 1) * (1 - tx) * (ty) +
-            dem.get(cx + 1, cy + 1) * (tx) * (ty)
-        );
+        return sampleDEMElevation(terrain, demX, demY, extent);
     }
 
     /**
@@ -270,6 +302,10 @@ export class Terrain {
      */
     getElevation(tileID: OverscaledTileID, x: number, y: number, extent: number = EXTENT): number {
         return this.getDEMElevation(tileID, x, y, extent) * this.exaggeration;
+    }
+
+    getElevationSampler(tileID: OverscaledTileID, extent: number = EXTENT): TerrainElevationSampler {
+        return new TerrainElevationSampler(this, tileID, extent);
     }
 
     /**

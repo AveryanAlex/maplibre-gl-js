@@ -369,6 +369,42 @@ describe('Terrain', () => {
         expect(spy).not.toHaveBeenCalled();
     });
 
+    test('getElevationSampler reuses terrain data for in-bounds coordinates', () => {
+        const terrain = new Terrain(null, {_source: {tileSize: 512}} as any, {exaggeration: 2} as any);
+        const tileID = new OverscaledTileID(1, 0, 1, 0, 0);
+        const normalizeSpy = vi.spyOn(tileID, 'normalizeCoordinates');
+        const getTerrainData = vi.fn().mockReturnValue({
+            u_terrain_matrix: mat4.create(),
+            tile: {
+                dem: {
+                    dim: 1,
+                    get(x: number, y: number) {
+                        return 100 * x + 10 * y;
+                    }
+                }
+            }
+        });
+        terrain.getTerrainData = getTerrainData;
+
+        const sampler = terrain.getElevationSampler(tileID);
+
+        expect(sampler.getElevation(0.4, 0.2)).toBeCloseTo(84);
+        expect(sampler.getElevation(0.5, 0.5)).toBeCloseTo(110);
+        expect(getTerrainData).toHaveBeenCalledOnce();
+        expect(normalizeSpy).not.toHaveBeenCalled();
+    });
+
+    test('getElevationSampler preserves out-of-bounds elevation behavior', () => {
+        const terrain = new Terrain(null, {_source: {tileSize: 512}} as any, {} as any);
+        terrain.getTerrainData = vi.fn().mockReturnValue({u_terrain_matrix: mat4.create(), tile: null});
+        const tileID = new OverscaledTileID(1, 0, 1, 0, 0);
+        const sampler = terrain.getElevationSampler(tileID);
+        const spy = vi.spyOn(terrain, 'getElevation').mockReturnValue(7);
+
+        expect(sampler.getElevation(EXTENT, 10)).toBe(7);
+        expect(spy).toHaveBeenCalledWith(tileID, EXTENT, 10, EXTENT);
+    });
+
     describe('getElevationForLngLatZoom returns 0 for out of bounds', () => {
         const terrain = new Terrain(null, {_source: {tileSize: 512}} as any, {} as any);
 
