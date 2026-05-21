@@ -7,7 +7,7 @@ import {type Style} from '../style/style.ts';
 import {type Terrain} from '../render/terrain.ts';
 import {type Texture} from './texture.ts';
 import type {StyleLayer} from '../style/style_layer.ts';
-import {ImageSource} from '../source/image_source.ts';
+import {ImageSource, type CanonicalTileRange} from '../source/image_source.ts';
 
 /**
  * lookup table which layers should rendered to texture
@@ -67,10 +67,15 @@ export class RenderToTexture {
      * a list of all layer-ids which should be rendered
      */
     _renderableLayerIds: string[];
+    /**
+     * signature of inputs used to build source-to-terrain RTT mappings
+     */
+    _prepareCacheKey: string | null;
     constructor(painter: Painter, terrain: Terrain) {
         this.painter = painter;
         this.terrain = terrain;
         this.rttSize = terrain.tileManager.tileSize * terrain.qualityFactor;
+        this._prepareCacheKey = null;
     }
 
     getTexture(tile: Tile): Texture {
@@ -84,10 +89,46 @@ export class RenderToTexture {
         this._renderableTiles = this.terrain.tileManager.getRenderableTiles();
         this._renderableLayerIds = style._order.filter(id => !style._layers[id].isHidden(zoom));
 
+        const rttSources: {[sourceId: string]: boolean} = {};
+        const layerKey = this._renderableLayerIds.map((id) => {
+            const layer = style._layers[id];
+            const shouldRenderToTexture = LAYERS_TO_TEXTURES[layer.type];
+            if (shouldRenderToTexture) rttSources[layer.source] = true;
+            return `${id}:${layer.type}:${layer.source ?? ''}:${shouldRenderToTexture ? 1 : 0}`;
+        }).join('|');
+
+        const visibleCoordinates: {[_: string]: OverscaledTileID[]} = {};
+        const sourceKeyParts: string[] = [];
+        for (const id in style.tileManagers) {
+            const tileManager = style.tileManagers[id];
+            const tileIDs = tileManager.getVisibleCoordinates();
+            const source = tileManager.getSource();
+            const isImageSource = source instanceof ImageSource;
+            const terrainTileRanges = isImageSource ? source.terrainTileRanges : null;
+            const revision = rttSources[id] ? tileManager.getState().revision : 0;
+            visibleCoordinates[id] = tileIDs;
+            sourceKeyParts.push(`${id}:${revision}:${isImageSource ? 1 : 0}:${this._terrainTileRangesKey(terrainTileRanges)}:${tileIDs.map(tileID => tileID.key).join(',')}`);
+        }
+
+        const cacheKey = [
+            zoom,
+            this.rttSize,
+            this._renderableTiles.map(tile => tile.tileID.key).join(','),
+            layerKey,
+            sourceKeyParts.join('|')
+        ].join('#');
+
+        if (cacheKey === this._prepareCacheKey) {
+            this._releaseStaleRTTs();
+            return;
+        }
+
+        this._prepareCacheKey = cacheKey;
+
         this._coordsAscending = {};
         for (const id in style.tileManagers) {
             this._coordsAscending[id] = {};
-            const tileIDs = style.tileManagers[id].getVisibleCoordinates();
+            const tileIDs = visibleCoordinates[id];
             const source = style.tileManagers[id].getSource();
             const terrainTileRanges = source instanceof ImageSource ? source.terrainTileRanges : null;
             for (const tileID of tileIDs) {
@@ -114,7 +155,10 @@ export class RenderToTexture {
             }
         }
 
-        // check tiles to render
+        this._releaseStaleRTTs();
+    }
+
+    _releaseStaleRTTs(): void {
         for (const tile of this._renderableTiles) {
             for (const source in this._rttFingerprints) {
                 const fingerprint = this._rttFingerprints[source][tile.tileID.key];
@@ -123,6 +167,15 @@ export class RenderToTexture {
                 }
             }
         }
+    }
+
+    _terrainTileRangesKey(terrainTileRanges: {[zoom: string]: CanonicalTileRange} | null | undefined): string {
+        if (!terrainTileRanges) return '';
+
+        return Object.keys(terrainTileRanges).sort().map((zoom) => {
+            const range = terrainTileRanges[zoom];
+            return `${zoom}:${range.minTileY},${range.maxTileY},${range.minTileXWrapped},${range.maxTileXWrapped},${range.minWrap},${range.maxWrap}`;
+        }).join(';');
     }
 
     /**

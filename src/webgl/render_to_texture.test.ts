@@ -91,7 +91,7 @@ describe('render to texture', () => {
     const style = {
         tileManagers: {
             'maine': {
-                getVisibleCoordinates: () => [tile.tileID],
+                getVisibleCoordinates: vi.fn().mockReturnValue([tile.tileID]),
                 getSource: () => ({}),
                 getState: vi.fn().mockReturnValue({revision: 0})
             }
@@ -125,6 +125,15 @@ describe('render to texture', () => {
     beforeEach(() => {
         tile.rttObjects.length = 0;
         tile.rttFingerprint = {};
+        style._order = ['maine-fill', 'maine-symbol'];
+        (style.tileManagers['maine'].getVisibleCoordinates as Mock).mockClear();
+        (style.tileManagers['maine'].getVisibleCoordinates as Mock).mockReturnValue([tile.tileID]);
+        (style.tileManagers['maine'].getState as Mock).mockClear();
+        (style.tileManagers['maine'].getState as Mock).mockReturnValue({revision: 0});
+        (terrain.tileManager.getRenderableTiles as Mock).mockClear();
+        (terrain.tileManager.getRenderableTiles as Mock).mockReturnValue([tile]);
+        (terrain.tileManager.getTerrainCoords as Mock).mockClear();
+        (terrain.tileManager.getTerrainCoords as Mock).mockReturnValue({[tile.tileID.key]: tile.tileID});
     });
 
     test('should call painter with overlay tiles for terrain tile', () => {
@@ -154,6 +163,7 @@ describe('render to texture', () => {
         tile.rttObjects[0] = obj;
 
         const otherTileID = new OverscaledTileID(3, 0, 2, 2, 2);
+        (style.tileManagers['maine'].getVisibleCoordinates as Mock).mockReturnValueOnce([otherTileID]);
         (terrain.tileManager.getTerrainCoords as Mock).mockReturnValueOnce({[tile.tileID.key]: otherTileID});
         (painter.releaseRTT as Mock).mockClear();
 
@@ -171,6 +181,33 @@ describe('render to texture', () => {
         rtt.prepareForRender(style, 0);
 
         expect(tile.getRTT(0)).toBeTruthy();
+    });
+
+    test('should reuse prepared terrain/source mappings when inputs remain unchanged', () => {
+        const localRtt = new RenderToTexture(painter, terrain);
+        const getTerrainCoordsSpy = terrain.tileManager.getTerrainCoords as Mock;
+
+        localRtt.prepareForRender(style, 0);
+        expect(getTerrainCoordsSpy).toHaveBeenCalledTimes(1);
+
+        getTerrainCoordsSpy.mockClear();
+        localRtt.prepareForRender(style, 0);
+
+        expect(getTerrainCoordsSpy).not.toHaveBeenCalled();
+        expect(localRtt._coordsAscending.maine[tile.tileID.key]).toStrictEqual([tile.tileID]);
+    });
+
+    test('should rebuild prepared mappings when visible layer ordering changes', () => {
+        const localRtt = new RenderToTexture(painter, terrain);
+        const getTerrainCoordsSpy = terrain.tileManager.getTerrainCoords as Mock;
+
+        localRtt.prepareForRender(style, 0);
+        getTerrainCoordsSpy.mockClear();
+        style._order = ['maine-symbol', 'maine-fill'];
+
+        localRtt.prepareForRender(style, 0);
+
+        expect(getTerrainCoordsSpy).toHaveBeenCalledTimes(1);
     });
 
     test('should render text after a line by not adding the text to the stack', () => {
