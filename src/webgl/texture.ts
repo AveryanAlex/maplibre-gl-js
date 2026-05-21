@@ -3,7 +3,7 @@ import type {RGBAImage, AlphaImage} from '../util/image.ts';
 import {premultiplyAlpha} from '../util/image.ts';
 
 export type TextureFormat = WebGLRenderingContextBase['RGBA'] | WebGLRenderingContextBase['ALPHA'];
-export type TextureFilter = WebGLRenderingContextBase['LINEAR'] | WebGLRenderingContextBase['LINEAR_MIPMAP_NEAREST'] | WebGLRenderingContextBase['NEAREST'];
+export type TextureFilter = WebGLRenderingContextBase['LINEAR'] | WebGLRenderingContextBase['LINEAR_MIPMAP_NEAREST'] | WebGLRenderingContextBase['LINEAR_MIPMAP_LINEAR'] | WebGLRenderingContextBase['NEAREST'];
 export type TextureWrap = WebGLRenderingContextBase['REPEAT'] | WebGLRenderingContextBase['CLAMP_TO_EDGE'] | WebGLRenderingContextBase['MIRRORED_REPEAT'];
 
 type EmptyImage = {
@@ -28,8 +28,10 @@ export class Texture {
     size: [number, number];
     texture: WebGLTexture;
     format: TextureFormat;
-    filter: TextureFilter;
-    wrap: TextureWrap;
+    filter: TextureFilter | null;
+    minFilter: TextureFilter | null;
+    wrap: TextureWrap | null;
+    anisotropy: number | null;
     useMipmap: boolean;
 
     /** Tracks the original handle to detect corruption after context loss (#2811) */
@@ -64,6 +66,10 @@ export class Texture {
             gl.deleteTexture(this.texture);
             this.texture = gl.createTexture();
             this._ownedHandle = this.texture;
+            this.filter = null;
+            this.minFilter = null;
+            this.wrap = null;
+            this.anisotropy = null;
         }
 
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -112,7 +118,7 @@ export class Texture {
         }
 
         if (this.useMipmap) {
-            gl.generateMipmap(gl.TEXTURE_2D);
+            this.generateMipmap();
         }
 
         context.pixelStoreUnpackFlipY.setDefault();
@@ -140,7 +146,7 @@ export class Texture {
         gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
     }
 
-    bind(filter: TextureFilter, wrap: TextureWrap, minFilter?: TextureFilter | null): void {
+    bind(filter: TextureFilter, wrap: TextureWrap, minFilter?: TextureFilter | null, anisotropy?: number | null): void {
         const {context} = this;
         const {gl} = context;
 
@@ -150,14 +156,20 @@ export class Texture {
 
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
 
-        if (minFilter === gl.LINEAR_MIPMAP_NEAREST && !this.useMipmap) {
+        if ((minFilter === gl.LINEAR_MIPMAP_NEAREST || minFilter === gl.LINEAR_MIPMAP_LINEAR) && !this.useMipmap) {
             minFilter = gl.LINEAR;
         }
 
+        minFilter ||= filter;
+
         if (filter !== this.filter) {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter || filter);
             this.filter = filter;
+        }
+
+        if (minFilter !== this.minFilter) {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
+            this.minFilter = minFilter;
         }
 
         if (wrap !== this.wrap) {
@@ -165,6 +177,32 @@ export class Texture {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
             this.wrap = wrap;
         }
+
+        if (anisotropy !== null && anisotropy !== undefined) {
+            this.setAnisotropy(anisotropy);
+        }
+    }
+
+    setAnisotropy(anisotropy: number): void {
+        const {context} = this;
+        const {gl} = context;
+        const extension = context.extTextureFilterAnisotropic;
+        if (!extension) return;
+
+        const maxAnisotropy = context.extTextureFilterAnisotropicMax || 1;
+        const clampedAnisotropy = Math.max(1, Math.min(anisotropy, maxAnisotropy));
+        if (clampedAnisotropy === this.anisotropy) return;
+
+        gl.texParameterf(gl.TEXTURE_2D, extension.TEXTURE_MAX_ANISOTROPY_EXT, clampedAnisotropy);
+        this.anisotropy = clampedAnisotropy;
+    }
+
+    generateMipmap(): void {
+        if (!this.useMipmap) return;
+
+        const {gl} = this.context;
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.generateMipmap(gl.TEXTURE_2D);
     }
 
     destroy(): void {

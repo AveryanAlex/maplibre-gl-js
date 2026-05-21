@@ -63,6 +63,17 @@ describe('render to texture', () => {
     } as any as SymbolStyleLayer;
 
     let layersDrawn = 0;
+    const createMockRTTTexture = () => ({
+        texture: gl.createTexture(),
+        useMipmap: true,
+        bind: vi.fn(),
+        generateMipmap: vi.fn()
+    });
+    const createMockRTTObject = (size: number) => ({
+        fbo: {framebuffer: null, width: size, height: size},
+        texture: createMockRTTTexture(),
+        size
+    });
     const painter = {
         layersDrawn: 0,
         context: new Context(gl),
@@ -72,7 +83,7 @@ describe('render to texture', () => {
         useProgram: () => ({draw: () => { layersDrawn++; }}),
         _renderTileClippingMasks: vi.fn(),
         renderLayer: vi.fn(),
-        acquireRTT: (size: number) => ({fbo: {framebuffer: null, width: size, height: size}, texture: {}, size}),
+        acquireRTT: (size: number) => createMockRTTObject(size),
         releaseRTT: vi.fn(),
         drawFunctions: {
             terrainDepth: vi.fn(),
@@ -244,13 +255,14 @@ describe('render to texture', () => {
         expect(acquireSpy).toHaveBeenCalledWith(rtt.rttSize);
         expect(tile.getRTT(0)).toBeTruthy();
         expect(tile.getRTT(0).size).toBe(rtt.rttSize);
+        expect((tile.getRTT(0).texture.generateMipmap as Mock)).toHaveBeenCalled();
     });
 
     test('cache hit reuses cached RTT and skips acquireRTT', () => {
         style._order = ['maine-fill', 'maine-symbol'];
         rtt.prepareForRender(style, 0);
 
-        const cached = {fbo: {framebuffer: null}, texture: {}, size: rtt.rttSize} as unknown as RTTObject;
+        const cached = createMockRTTObject(rtt.rttSize) as unknown as RTTObject;
         tile.rttObjects[0] = cached;
 
         const acquireSpy = vi.spyOn(painter, 'acquireRTT');

@@ -7,6 +7,7 @@ import {CullFaceMode} from '../cull_face_mode.ts';
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {ColorMode} from '../color_mode.ts';
 import {type Terrain} from '../../render/terrain.ts';
+import type {Texture} from '../texture.ts';
 
 /**
  * Redraw the Depth Framebuffer
@@ -86,13 +87,19 @@ function drawTerrain(painter: Painter, terrain: Terrain, tiles: Tile[], renderOp
         const texture = painter.renderToTexture.getTexture(tile);
         const terrainData = terrain.getTerrainData(tile.tileID);
         context.activeTexture.set(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, texture.texture);
+        texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_LINEAR, getTerrainTextureAnisotropy(painter, texture));
         const eleDelta = terrain.getSkirtLength(tr.zoom);
         const fogMatrix = tr.calculateFogMatrix(tile.tileID.toUnwrapped());
         const uniformValues = terrainUniformValues(eleDelta, fogMatrix, painter.style.sky, tr.pitch, isRenderingGlobe);
         const projectionData = tr.getProjectionData({overscaledTileID: tile.tileID, applyTerrainMatrix: false, applyGlobeMatrix: true});
         program.draw(context, gl.TRIANGLES, depthMode, StencilMode.disabled, colorMode, CullFaceMode.backCCW, uniformValues, terrainData, projectionData, 'terrain', mesh.vertexBuffer, mesh.indexBuffer, mesh.segments);
     }
+}
+
+function getTerrainTextureAnisotropy(painter: Painter, texture: Texture): number {
+    const anisotropicFilterPitch = painter.options?.anisotropicFilterPitch ?? 20;
+    if (!texture.useMipmap || !painter.context.extTextureFilterAnisotropic || painter.transform.pitch <= anisotropicFilterPitch) return 1;
+    return painter.context.extTextureFilterAnisotropicMax || 1;
 }
 
 export {

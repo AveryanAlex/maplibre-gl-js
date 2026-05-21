@@ -85,8 +85,10 @@ export class NullWebGL2RenderingContext {
     TEXTURE_WRAP_T: number = 0x2803;
     LINEAR: number = 0x2601;
     NEAREST: number = 0x2600;
+    NEAREST_MIPMAP_NEAREST: number = 0x2700;
     LINEAR_MIPMAP_NEAREST: number = 0x2701;
     NEAREST_MIPMAP_LINEAR: number = 0x2702;
+    LINEAR_MIPMAP_LINEAR: number = 0x2703;
     REPEAT: number = 0x2901;
     CLAMP_TO_EDGE: number = 0x812F;
     TEXTURE0: number = 0x84C0;
@@ -152,11 +154,12 @@ export class NullWebGL2RenderingContext {
         if (pname === this.VERSION) return 'WebGL 2.0';
         if (pname === this.MAX_TEXTURE_SIZE) return 4096;
         if (pname === this.MAX_TEXTURE_IMAGE_UNITS) return 16;
+        if (pname === 0x84FF) return 16;
         return 0;
     });
     getExtension: Mock<GL['getExtension']> = vi.fn((_name: string): any => {
         // Return an object for extensions maplibre probes
-        if (_name === 'EXT_texture_filter_anisotropic') return {MAX_TEXTURE_MAX_ANISOTROPY_EXT: 0x84FF};
+        if (_name === 'EXT_texture_filter_anisotropic') return {TEXTURE_MAX_ANISOTROPY_EXT: 0x84FE, MAX_TEXTURE_MAX_ANISOTROPY_EXT: 0x84FF};
         if (_name === 'EXT_color_buffer_half_float') return {RGBA16F_EXT: 0x881A, RGB16F_EXT: 0x881B};
         if (_name === 'EXT_color_buffer_float') return {};
         return null;

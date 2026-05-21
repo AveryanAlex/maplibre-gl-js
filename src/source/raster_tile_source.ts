@@ -201,7 +201,7 @@ export class RasterTileSource extends Evented implements Source {
                     tile.texture.update(img, {useMipmap: true});
                 } else {
                     tile.texture = new Texture(context, img, gl.RGBA, {useMipmap: true});
-                    tile.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_NEAREST);
+                    tile.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_LINEAR);
                 }
                 tile.state = 'loaded';
             }

@@ -1,4 +1,4 @@
-import {describe, expect, test} from 'vitest';
+import {describe, expect, test, vi} from 'vitest';
 import {Context} from './context.ts';
 import {Texture} from './texture.ts';
 import {premultiplyAlpha, RGBAImage} from '../util/image.ts';
@@ -66,6 +66,51 @@ describe('Texture', () => {
         expect(texture.size).toEqual([4, 4]);
         expect(texture.texture).not.toBe(firstHandle);
         expect(gl.deleteTexture).toHaveBeenCalled();
+    });
+
+    test('bind updates min filter independently from mag filter', () => {
+        const gl = createNullGL();
+        const context = new Context(gl);
+        const image = new RGBAImage({width: 2, height: 2}, new Uint8Array(2 * 2 * 4));
+        const texture = new Texture(context, image, gl.RGBA, {useMipmap: true});
+
+        texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_NEAREST);
+        vi.mocked(gl.texParameteri).mockClear();
+
+        texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_LINEAR);
+
+        expect(gl.texParameteri).toHaveBeenCalledOnce();
+        expect(gl.texParameteri).toHaveBeenCalledWith(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    });
+
+    test('bind reapplies texture parameters after resize recreates handle', () => {
+        const gl = createNullGL();
+        const context = new Context(gl);
+        const image1 = new RGBAImage({width: 2, height: 2}, new Uint8Array(2 * 2 * 4));
+        const image2 = new RGBAImage({width: 4, height: 4}, new Uint8Array(4 * 4 * 4));
+        const texture = new Texture(context, image1, gl.RGBA, {useMipmap: true});
+
+        texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_LINEAR);
+        texture.update(image2, {useMipmap: true});
+        vi.mocked(gl.texParameteri).mockClear();
+
+        texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_LINEAR);
+
+        expect(gl.texParameteri).toHaveBeenCalledWith(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        expect(gl.texParameteri).toHaveBeenCalledWith(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        expect(gl.texParameteri).toHaveBeenCalledWith(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        expect(gl.texParameteri).toHaveBeenCalledWith(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    });
+
+    test('bind applies requested anisotropy when supported', () => {
+        const gl = createNullGL();
+        const context = new Context(gl);
+        const image = new RGBAImage({width: 2, height: 2}, new Uint8Array(2 * 2 * 4));
+        const texture = new Texture(context, image, gl.RGBA, {useMipmap: true});
+
+        texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_LINEAR, 4);
+
+        expect(gl.texParameterf).toHaveBeenCalledWith(gl.TEXTURE_2D, context.extTextureFilterAnisotropic.TEXTURE_MAX_ANISOTROPY_EXT, 4);
     });
 
     test('premultiplyAlpha produces correct output', () => {
