@@ -1835,10 +1835,14 @@ export class Style extends Evented {
         let placementCommitted = false;
 
         const layerTiles = {};
+        const placementOrder = [];
 
         for (const layerID of this._order) {
             const styleLayer = this._layers[layerID];
             if (styleLayer.type !== 'symbol') continue;
+            if (styleLayer.isHidden(transform.zoom)) continue;
+
+            placementOrder.push(layerID);
 
             if (!layerTiles[styleLayer.source]) {
                 const tileManager = this.tileManagers[styleLayer.source];
@@ -1850,7 +1854,7 @@ export class Style extends Evented {
             const layerBucketsChanged = this.crossTileSymbolIndex.addLayer(styleLayer, layerTiles[styleLayer.source], transform.center.lng);
             symbolBucketsChanged ||= layerBucketsChanged;
         }
-        this.crossTileSymbolIndex.pruneUnusedLayers(this._order);
+        this.crossTileSymbolIndex.pruneUnusedLayers(placementOrder);
 
         // Anything that changes our "in progress" layer and tile indices requires us
         // to start over. When we start over, we do a full placement instead of incremental
@@ -1858,10 +1862,11 @@ export class Style extends Evented {
         // We need to restart placement to keep layer indices in sync.
         // Also force full placement when fadeDuration === 0 to ensure that newly loaded
         // tiles will fully display symbols in their first frame
-        forceFullPlacement ||= this._layerOrderChanged || fadeDuration === 0;
+        const placementOrderChanged = this.pauseablePlacement && !this.pauseablePlacement.hasLayerOrder(placementOrder);
+        forceFullPlacement ||= this._layerOrderChanged || placementOrderChanged || fadeDuration === 0;
 
         if (forceFullPlacement || !this.pauseablePlacement || (this.pauseablePlacement.isDone() && !this.placement.stillRecent(now(), transform.zoom))) {
-            this.pauseablePlacement = new PauseablePlacement(transform, this.map.terrain, this._order, forceFullPlacement, showCollisionBoxes, fadeDuration, crossSourceCollisions, this.placement);
+            this.pauseablePlacement = new PauseablePlacement(transform, this.map.terrain, placementOrder, forceFullPlacement, showCollisionBoxes, fadeDuration, crossSourceCollisions, this.placement);
             this._layerOrderChanged = false;
         }
 
@@ -1872,7 +1877,7 @@ export class Style extends Evented {
             // render frame
             this.placement.setStale();
         } else {
-            this.pauseablePlacement.continuePlacement(this._order, this._layers, layerTiles);
+            this.pauseablePlacement.continuePlacement(placementOrder, this._layers, layerTiles);
 
             if (this.pauseablePlacement.isDone()) {
                 this.placement = this.pauseablePlacement.commit(now());
@@ -1888,9 +1893,8 @@ export class Style extends Evented {
         }
 
         if (placementCommitted || symbolBucketsChanged) {
-            for (const layerID of this._order) {
+            for (const layerID of placementOrder) {
                 const styleLayer = this._layers[layerID];
-                if (styleLayer.type !== 'symbol') continue;
                 this.placement.updateLayerOpacities(styleLayer, layerTiles[styleLayer.source]);
             }
         }

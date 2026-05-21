@@ -32,4 +32,35 @@ describe('PauseablePlacement', () => {
 
         expect(pp.isDone()).toBe(true);
     });
+
+    test('should skip hidden symbol layers', () => {
+        const transform = new MercatorTransform();
+        transform.resize(512, 512);
+
+        const pp = new PauseablePlacement(
+            transform,
+            undefined,
+            ['hidden-symbol-layer'],
+            true,
+            false,
+            300,
+            true,
+        );
+
+        const layers: {[_: string]: StyleLayer} = {
+            'hidden-symbol-layer': {
+                id: 'hidden-symbol-layer',
+                type: 'symbol',
+                source: 'test-source',
+                layout: {},
+                isHidden: () => true,
+            } as any as StyleLayer,
+        };
+
+        expect(() => {
+            pp.continuePlacement(['hidden-symbol-layer'], layers, {});
+        }).not.toThrow();
+
+        expect(pp.isDone()).toBe(true);
+    });
 });

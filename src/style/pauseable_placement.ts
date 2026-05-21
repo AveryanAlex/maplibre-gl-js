@@ -61,6 +61,7 @@ class LayerPlacement {
 export class PauseablePlacement {
     placement: Placement;
     _done: boolean;
+    _order: string[];
     _currentPlacementIndex: number;
     _forceFullPlacement: boolean;
     _showCollisionBoxes: boolean;
@@ -77,6 +78,7 @@ export class PauseablePlacement {
         prevPlacement?: Placement
     ) {
         this.placement = new Placement(transform, terrain, fadeDuration, crossSourceCollisions, prevPlacement);
+        this._order = order.slice();
         this._currentPlacementIndex = order.length - 1;
         this._forceFullPlacement = forceFullPlacement;
         this._showCollisionBoxes = showCollisionBoxes;
@@ -85,6 +87,11 @@ export class PauseablePlacement {
 
     isDone(): boolean {
         return this._done;
+    }
+
+    hasLayerOrder(order: string[]): boolean {
+        if (this._order.length !== order.length) return false;
+        return this._order.every((layerId, index) => layerId === order[index]);
     }
 
     continuePlacement(
@@ -104,6 +111,7 @@ export class PauseablePlacement {
             const placementZoom = this.placement.collisionIndex.transform.zoom;
             if (isSymbolStyleLayer(layer) &&
                 layer.layout &&
+                !layer.isHidden(placementZoom) &&
                 (!layer.minzoom || layer.minzoom <= placementZoom) &&
                 (!layer.maxzoom || layer.maxzoom > placementZoom)) {
 

@@ -10,7 +10,7 @@ import {browser} from '../util/browser.ts';
 import {OverscaledTileID} from '../tile/tile_id.ts';
 import {fakeServer, type FakeServer} from 'nise';
 
-import {type EvaluationParameters} from './evaluation_parameters.ts';
+import {EvaluationParameters} from './evaluation_parameters.ts';
 import {Color, type Feature, type LayerSpecification, type GeoJSONSourceSpecification, type FilterSpecification, type SourceSpecification, type StyleSpecification, type SymbolLayerSpecification, type SkySpecification, type CameraFunctionSpecification} from '@maplibre/maplibre-gl-style-spec';
 import {type GeoJSONSource} from '../source/geojson_source.ts';
 import {StubMap, sleep, waitForEvent} from '../util/test/util.ts';
@@ -3259,6 +3259,46 @@ describe('Style defers  ...', () => {
 
         // called once
         expect(style._updateWorkerLayers).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('Style._updatePlacement', () => {
+    test('skips hidden symbol layers before building placement tiles', async () => {
+        const style = createStyle();
+        style.loadJSON(createStyleJSON({
+            sources: {
+                visible: createGeoJSONSource(),
+                hidden: createGeoJSONSource()
+            },
+            layers: [{
+                id: 'hidden-symbol',
+                type: 'symbol',
+                source: 'hidden',
+                layout: {visibility: 'none'}
+            }, {
+                id: 'visible-symbol',
+                type: 'symbol',
+                source: 'visible'
+            }]
+        }));
+
+        await style.once('style.load');
+        style.update(new EvaluationParameters(0));
+
+        const transform = new MercatorTransform();
+        transform.resize(512, 512);
+
+        const hiddenGetRenderableIds = vi.spyOn(style.tileManagers.hidden, 'getRenderableIds').mockReturnValue([]);
+        const visibleGetRenderableIds = vi.spyOn(style.tileManagers.visible, 'getRenderableIds').mockReturnValue([]);
+        const addLayer = vi.spyOn(style.crossTileSymbolIndex, 'addLayer');
+
+        style._updatePlacement(transform, false, 300, true, true);
+
+        expect(hiddenGetRenderableIds).not.toHaveBeenCalled();
+        expect(visibleGetRenderableIds).toHaveBeenCalledTimes(1);
+        expect(addLayer).toHaveBeenCalledTimes(1);
+        expect(addLayer.mock.calls[0][0].id).toBe('visible-symbol');
+        expect(style.pauseablePlacement.hasLayerOrder(['visible-symbol'])).toBe(true);
     });
 });
 
