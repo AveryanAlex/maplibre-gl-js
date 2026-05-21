@@ -91,6 +91,19 @@ describe('TerrainTileManager', () => {
         expect(tsc.getSourceTile(tileID, true).tileID.key).toBe(underzoomTileID.key);
     });
 
+    test('getSourceTile should preserve wrap when looking up scaled source tile', () => {
+        const tileID = new OverscaledTileID(7, 1, 7, 34, 22);
+        const wrappedSourceTileID = tileID.scaledTo(tileID.canonical.z - tsc.deltaZoom);
+        const unwrappedSourceTileID = wrappedSourceTileID.wrapped();
+        const wrappedTile = new Tile(wrappedSourceTileID, 256);
+        const unwrappedTile = new Tile(unwrappedSourceTileID, 256);
+
+        tsc.tileManager._inViewTiles.setTile(unwrappedSourceTileID.key, unwrappedTile);
+        tsc.tileManager._inViewTiles.setTile(wrappedSourceTileID.key, wrappedTile);
+
+        expect(tsc.getSourceTile(tileID)).toBe(wrappedTile);
+    });
+
     describe('getTerrainCoords', () => {
         describe('tile without custom range', () => {
             test('includes only overlapping tiles', () => {

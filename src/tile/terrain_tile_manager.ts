@@ -286,12 +286,12 @@ export class TerrainTileManager extends Evented {
         if (z > source.maxzoom) z = source.maxzoom;
         if (z < source.minzoom) return undefined;
         // cache for tileID to terrain-tileID
-        this._sourceTileCache[tileID.key] ||= tileID.scaledTo(z).key;
+        this._sourceTileCache[tileID.key] ||= tileID.calculateScaledKey(z, true);
         let tile = this.findTileInCaches(this._sourceTileCache[tileID.key]);
         // during tile-loading phase look if parent tiles (with loaded dem) are available.
         if (!tile?.dem && searchForDEM) {
             while (z >= source.minzoom && !tile?.dem)
-                tile = this.findTileInCaches(tileID.scaledTo(z--).key);
+                tile = this.findTileInCaches(tileID.calculateScaledKey(z--, true));
         }
         return tile;
     }
