@@ -83,4 +83,42 @@ describe('TransformHelper', () => {
             expectToBeCloseToArray(tileMercatorCoords, [0.5, 0, 0.5 / EXTENT, 0.5 / EXTENT]);
         });
     });
+
+    test('batchUpdate coalesces matrix recalculation', () => {
+        let calcMatricesCalls = 0;
+        const helper = new TransformHelper({
+            calcMatrices: () => { calcMatricesCalls++; },
+            defaultConstrain: (center, zoom) => ({center, zoom}),
+        });
+
+        helper.batchUpdate(() => {
+            helper.setCenter(new LngLat(1, 2));
+            helper.setZoom(3);
+            helper.setBearing(45);
+            helper.setPitch(20);
+            helper.setRoll(10);
+            helper.setElevation(100);
+        });
+
+        expect(calcMatricesCalls).toBe(1);
+    });
+
+    test('nested batchUpdate only flushes once', () => {
+        let calcMatricesCalls = 0;
+        const helper = new TransformHelper({
+            calcMatrices: () => { calcMatricesCalls++; },
+            defaultConstrain: (center, zoom) => ({center, zoom}),
+        });
+
+        helper.batchUpdate(() => {
+            helper.setZoom(2);
+            helper.batchUpdate(() => {
+                helper.setCenter(new LngLat(3, 4));
+                helper.setBearing(90);
+            });
+            helper.setPitch(30);
+        });
+
+        expect(calcMatricesCalls).toBe(1);
+    });
 });

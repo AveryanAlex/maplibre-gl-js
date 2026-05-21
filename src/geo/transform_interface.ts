@@ -107,6 +107,15 @@ interface ITransformMutators {
     clone(): ITransform;
 
     /**
+     * Batches multiple transform mutations so internal matrices are recalculated once
+     * after the callback completes.
+     *
+     * Nested batches are supported and only the outermost batch flushes pending
+     * matrix recalculation work.
+     */
+    batchUpdate<T>(callback: () => T): T;
+
+    /**
      * Applies a transform to the current transform.
      * @param that - The transform to apply to the current transform.
      * @param constrain - Whether to constrain the transform's center and zoom and recompute internal matrices once applied.
@@ -520,4 +529,3 @@ export interface IReadonlyTransform extends ITransformGetters {
  * A transform is cloneable, which is used when a given map state must be retained for multiple frames, mostly during symbol placement.
  */
 export interface ITransform extends IReadonlyTransform, ITransformMutators {}
-

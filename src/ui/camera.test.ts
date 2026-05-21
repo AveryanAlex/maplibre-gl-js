@@ -303,6 +303,23 @@ describe('jumpTo', () => {
         expect(camera.getRoll()).toBe(20);
     });
 
+    test('batches transform updates', () => {
+        const camera = createCamera({zoom: 1});
+        const batchUpdate = vi.fn((callback: () => void) => callback());
+        (camera.transform as any).batchUpdate = batchUpdate;
+
+        camera.jumpTo({
+            center: [10, 20],
+            zoom: 10,
+            bearing: 180,
+            pitch: 60,
+            roll: 15,
+            elevation: 25,
+        });
+
+        expect(batchUpdate).toHaveBeenCalledTimes(1);
+    });
+
     test('emits move events, preserving eventData', () => {
         let started, moved, ended;
         const eventData = {data: 'ok'};

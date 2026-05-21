@@ -103,6 +103,8 @@ function getTileZoom(zoom: number): number {
  */
 export class TransformHelper implements ITransformGetters {
     private _callbacks: TransformHelperCallbacks;
+    private _batchUpdateDepth: number;
+    private _matrixUpdateQueued: boolean;
 
     _tileSize: number; // constant
     _tileZoom: number; // integer zoom level for tiles
@@ -183,6 +185,21 @@ export class TransformHelper implements ITransformGetters {
         this._edgeInsets = new EdgeInsets();
         this._minElevationForCurrentTile = 0;
         this._autoCalculateNearFarZ = true;
+        this._batchUpdateDepth = 0;
+        this._matrixUpdateQueued = false;
+    }
+
+    public batchUpdate<T>(callback: () => T): T {
+        this._batchUpdateDepth++;
+        try {
+            return callback();
+        } finally {
+            this._batchUpdateDepth--;
+            if (this._batchUpdateDepth === 0 && this._matrixUpdateQueued) {
+                this._matrixUpdateQueued = false;
+                this._calcMatrices();
+            }
+        }
     }
 
     public apply(thatI: ITransformGetters, constrain: boolean, forceOverrideZ?: boolean): void {
@@ -215,7 +232,7 @@ export class TransformHelper implements ITransformGetters {
         if (constrain) {
             this.constrainInternal();
         }
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     get pixelsToClipSpaceMatrix(): mat4 { return this._pixelsToClipSpaceMatrix; }
@@ -295,7 +312,7 @@ export class TransformHelper implements ITransformGetters {
         if (this._constrainOverride === constrain) return;
         this._constrainOverride = constrain;
         this.constrainInternal();
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     get worldSize(): number {
@@ -321,7 +338,7 @@ export class TransformHelper implements ITransformGetters {
         if (this._bearingInRadians === b) return;
         this._unmodified = false;
         this._bearingInRadians = b;
-        this._calcMatrices();
+        this._requestMatrixUpdate();
 
         // 2x2 matrix for rotating points
         this._rotationMatrix = mat2.create();
@@ -341,7 +358,7 @@ export class TransformHelper implements ITransformGetters {
         if (this._pitchInRadians === p) return;
         this._unmodified = false;
         this._pitchInRadians = p;
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     get rollInRadians(): number {
@@ -355,7 +372,7 @@ export class TransformHelper implements ITransformGetters {
         if (this._rollInRadians === r) return;
         this._unmodified = false;
         this._rollInRadians = r;
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     get fovInRadians(): number {
@@ -369,7 +386,7 @@ export class TransformHelper implements ITransformGetters {
         if (this.fov === fov) return;
         this._unmodified = false;
         this._fovInRadians = degreesToRadians(fov);
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     get zoom(): number { return this._zoom; }
@@ -381,7 +398,7 @@ export class TransformHelper implements ITransformGetters {
         this._tileZoom = Math.max(0, Math.floor(constrainedZoom));
         this._scale = zoomScale(constrainedZoom);
         this.constrainInternal();
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     get center(): LngLat { return this._center; }
@@ -390,7 +407,7 @@ export class TransformHelper implements ITransformGetters {
         this._unmodified = false;
         this._center = center;
         this.constrainInternal();
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     /**
@@ -401,7 +418,7 @@ export class TransformHelper implements ITransformGetters {
         if (elevation === this._elevation) return;
         this._elevation = elevation;
         this.constrainInternal();
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     get padding(): PaddingOptions { return this._edgeInsets.toJSON(); }
@@ -410,7 +427,7 @@ export class TransformHelper implements ITransformGetters {
         this._unmodified = false;
         // Update edge-insets in-place
         this._edgeInsets.interpolate(this._edgeInsets, padding, 1);
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     /**
@@ -437,11 +454,11 @@ export class TransformHelper implements ITransformGetters {
         this._autoCalculateNearFarZ = false;
         this._nearZ = nearZ;
         this._farZ = farZ;
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
     clearNearFarZOverride(): void {
         this._autoCalculateNearFarZ = true;
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     /**
@@ -465,14 +482,14 @@ export class TransformHelper implements ITransformGetters {
         this._unmodified = false;
         this._edgeInsets.interpolate(start, target, t);
         this.constrainInternal();
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     resize(width: number, height: number, constrain: boolean = true): void {
         this._width = width;
         this._height = height;
         if (constrain) this.constrainInternal();
-        this._calcMatrices();
+        this._requestMatrixUpdate();
     }
 
     /**
@@ -572,6 +589,14 @@ export class TransformHelper implements ITransformGetters {
             this._cameraToCenterDistance = 0.5 / Math.tan(halfFov) * this._height;
         }
         this._callbacks.calcMatrices();
+    }
+
+    private _requestMatrixUpdate(): void {
+        if (this._batchUpdateDepth > 0) {
+            this._matrixUpdateQueued = true;
+            return;
+        }
+        this._calcMatrices();
     }
 
     calculateCenterFromCameraLngLatAlt(lnglat: LngLatLike, alt: number, bearing?: number, pitch?: number): {center: LngLat; elevation: number; zoom: number} {

@@ -137,6 +137,9 @@ export class VerticalPerspectiveTransform implements ITransform {
     clearNearFarZOverride(): void {
         this._helper.clearNearFarZOverride();
     }
+    batchUpdate<T>(callback: () => T): T {
+        return this._helper.batchUpdate(callback);
+    }
     getCameraQueryGeometry(queryGeometry: Point[]): Point[] {
         return this._helper.getCameraQueryGeometry(this.getCameraPoint(), queryGeometry);
     }

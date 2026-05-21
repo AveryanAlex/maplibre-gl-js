@@ -958,35 +958,37 @@ export abstract class Camera extends Evented {
         let rollChanged = false;
 
         const oldZoom = tr.zoom;
-        if (this.terrain) {
-            tr.setElevation(this.terrain.getElevationForLngLatZoom(options.center ? LngLat.convert(options.center) : tr.center, options.zoom || tr.tileZoom));
-        }
-        this.cameraHelper.handleJumpToCenterZoom(tr, options);
+        tr.batchUpdate(() => {
+            if (this.terrain) {
+                tr.setElevation(this.terrain.getElevationForLngLatZoom(options.center ? LngLat.convert(options.center) : tr.center, options.zoom || tr.tileZoom));
+            }
+            this.cameraHelper.handleJumpToCenterZoom(tr, options);
+
+            if ('elevation' in options && tr.elevation !== +options.elevation) {
+                tr.setElevation(+options.elevation);
+            }
+
+            if ('bearing' in options && tr.bearing !== +options.bearing) {
+                bearingChanged = true;
+                tr.setBearing(+options.bearing);
+            }
+
+            if ('pitch' in options && tr.pitch !== +options.pitch) {
+                pitchChanged = true;
+                tr.setPitch(+options.pitch);
+            }
+
+            if ('roll' in options && tr.roll !== +options.roll) {
+                rollChanged = true;
+                tr.setRoll(+options.roll);
+            }
+
+            if (options.padding != null && !tr.isPaddingEqual(options.padding)) {
+                tr.setPadding(options.padding);
+            }
+        });
 
         const zoomChanged = tr.zoom !== oldZoom;
-
-        if ('elevation' in options && tr.elevation !== +options.elevation) {
-            tr.setElevation(+options.elevation);
-        }
-
-        if ('bearing' in options && tr.bearing !== +options.bearing) {
-            bearingChanged = true;
-            tr.setBearing(+options.bearing);
-        }
-
-        if ('pitch' in options && tr.pitch !== +options.pitch) {
-            pitchChanged = true;
-            tr.setPitch(+options.pitch);
-        }
-
-        if ('roll' in options && tr.roll !== +options.roll) {
-            rollChanged = true;
-            tr.setRoll(+options.roll);
-        }
-
-        if (options.padding != null && !tr.isPaddingEqual(options.padding)) {
-            tr.setPadding(options.padding);
-        }
         this._applyUpdatedTransform(tr);
 
         this.fire(new Event('movestart', eventData))
@@ -1321,12 +1323,17 @@ export abstract class Camera extends Evented {
                 bearing,
                 elevation
             } = modifier(nextTransform);
-            if (center) nextTransform.setCenter(center);
-            if (elevation !== undefined) nextTransform.setElevation(elevation);
-            if (zoom !== undefined) nextTransform.setZoom(zoom);
-            if (roll !== undefined) nextTransform.setRoll(roll);
-            if (pitch !== undefined) nextTransform.setPitch(pitch);
-            if (bearing !== undefined) nextTransform.setBearing(bearing);
+            if (!center && elevation === undefined && zoom === undefined && roll === undefined && pitch === undefined && bearing === undefined) {
+                continue;
+            }
+            nextTransform.batchUpdate(() => {
+                if (center) nextTransform.setCenter(center);
+                if (elevation !== undefined) nextTransform.setElevation(elevation);
+                if (zoom !== undefined) nextTransform.setZoom(zoom);
+                if (roll !== undefined) nextTransform.setRoll(roll);
+                if (pitch !== undefined) nextTransform.setPitch(pitch);
+                if (bearing !== undefined) nextTransform.setBearing(bearing);
+            });
             finalTransform.apply(nextTransform, false);
         }
         this.transform.apply(finalTransform, false);
